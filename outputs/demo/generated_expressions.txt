@@ -1,0 +1,1 @@
+Rank(TsMean($ret_1d,10))\nRank(TsStd($ret_1d,10))\nRank(TsIr($ret_1d,10))\nSLog1p(TsIr($ret_1d,10))\nRank(TsMinMaxDiff($ret_1d,10))\nRank(TsRank($ret_1d,10))\nSLog1p(TsRank($ret_1d,10))\nRank(TsDelta($ret_1d,10))\nSLog1p(TsDelta($ret_1d,10))\nRank(TsDiv($ret_1d,10))\nRank(TsPctChange($ret_1d,10))\nSLog1p(TsPctChange($ret_1d,10))
