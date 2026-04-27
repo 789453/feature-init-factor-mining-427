@@ -2,6 +2,7 @@ from __future__ import annotations
 import numpy as np
 from .parser import Node, parse_expr, canonical
 from . import ops
+from . import fastops
 from .validator import Validator
 
 class EvalError(RuntimeError):
@@ -40,13 +41,21 @@ class BatchEvaluator:
         elif node.kind == "op":
             op = node.value
             if op in ops.UNARY:
-                out = ops.UNARY[op](self._eval_node(node.args[0]))
+                if op == "Rank":
+                    out = fastops.fast_rank_cs(self._eval_node(node.args[0]))
+                else:
+                    out = ops.UNARY[op](self._eval_node(node.args[0]))
             elif op in ops.BINARY:
                 out = ops.BINARY[op](self._eval_node(node.args[0]), self._eval_node(node.args[1]))
             elif op in ops.ROLLING:
                 out = ops.ROLLING[op](self._eval_node(node.args[0]), int(node.args[1].value))
             elif op in ops.PAIR_ROLLING:
-                out = ops.PAIR_ROLLING[op](self._eval_node(node.args[0]), self._eval_node(node.args[1]), int(node.args[2].value))
+                if op == "TsCorr":
+                    out = fastops.fast_rolling_corr(
+                        self._eval_node(node.args[0]), self._eval_node(node.args[1]), int(node.args[2].value)
+                    )
+                else:
+                    out = ops.PAIR_ROLLING[op](self._eval_node(node.args[0]), self._eval_node(node.args[1]), int(node.args[2].value))
             else:
                 raise EvalError(f"unknown op {op}")
         else:

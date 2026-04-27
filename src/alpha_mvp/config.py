@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Sequence
 
 DEFAULT_WINDOWS = (10, 20, 30, 40, 50)
-DEFAULT_FORWARD_DAYS = 1
+DEFAULT_FORWARD_DAYS = 5
 
 @dataclass(frozen=True)
 class EvalConfig:
@@ -30,3 +30,15 @@ class RunConfig:
     pool_json: str | None = None
     use_simulated: bool = False
     eval: EvalConfig = field(default_factory=EvalConfig)
+    resume: bool = True
+    checkpoint_pct: float = 0.05
+    first_checkpoint_pct: float = 0.02
+    topk_checkpoint: int = 50
+    write_every: int = 200
+    sqlite_path: str | None = None
+    train_end: str = "20250831"
+    test_start: str = "20250901"
+    progress_min_interval_sec: float = 5.0
+    expr_file: str | None = None
+    start_expr: int = 1
+    end_expr: int | None = None

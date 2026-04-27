@@ -34,12 +34,18 @@ def _first_existing_table(conn, candidates):
 def load_from_duckdb(duckdb_path: str, pool_json: str | None, start: str, end: str) -> pd.DataFrame:
     import duckdb
     pool = load_pool(pool_json)
-    pool_clause = ""
-    if pool:
-        codes = "','".join(pool)
-        pool_clause = f" and d.ts_code in ('{codes}')"
 
     conn = duckdb.connect(duckdb_path, read_only=True)
+    conn.execute("SET threads=16")
+    conn.execute("SET memory_limit='24GB'")
+
+    if pool:
+        pool_df = pd.DataFrame({"ts_code": pool})
+        conn.register("pool_df", pool_df)
+        pool_join = "join pool_df p on d.ts_code=p.ts_code"
+    else:
+        pool_join = ""
+
     daily = _first_existing_table(conn, TABLE_CANDIDATES["daily"])
     money = _first_existing_table(conn, TABLE_CANDIDATES["moneyflow"])
     cyq = _first_existing_table(conn, TABLE_CANDIDATES["cyq"])
@@ -57,12 +63,12 @@ def load_from_duckdb(duckdb_path: str, pool_json: str | None, start: str, end: s
       b.turnover_rate, b.turnover_rate_f, b.volume_ratio, b.total_mv, b.circ_mv,
       s.industry
     from {daily} d
+    {pool_join}
     left join {money} m on d.ts_code=m.ts_code and d.trade_date=m.trade_date
     left join {cyq} c on d.ts_code=c.ts_code and d.trade_date=c.trade_date
     left join {basic} b on d.ts_code=b.ts_code and d.trade_date=b.trade_date
     left join {snap} s on d.ts_code=s.ts_code
     where d.trade_date >= '{start}' and d.trade_date <= '{end}'
-    {pool_clause}
     order by d.trade_date, d.ts_code
     """
     df = conn.execute(q).fetchdf()

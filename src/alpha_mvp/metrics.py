@@ -1,26 +1,18 @@
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
+from . import fastops
 
-def forward_returns(close: np.ndarray, horizon=1) -> np.ndarray:
+def forward_returns(close: np.ndarray, horizon=5) -> np.ndarray:
     out = np.full_like(close, np.nan, dtype=float)
     out[:-horizon] = close[horizon:] / close[:-horizon] - 1
     return out
 
 def _daily_corr(x, y, rank=False):
-    vals = []
-    for i in range(x.shape[0]):
-        a, b = x[i], y[i]
-        m = np.isfinite(a) & np.isfinite(b)
-        if m.sum() < 10:
-            vals.append(np.nan)
-            continue
-        vals.append(spearmanr(a[m], b[m]).correlation if rank else np.corrcoef(a[m], b[m])[0, 1])
-    return np.array(vals, dtype=float)
+    return fastops.daily_corr(x, y, rank=rank)
 
 def turnover_proxy(factor: np.ndarray) -> float:
-    ranks = pd.DataFrame(factor).rank(axis=1, pct=True).to_numpy(dtype=float)
+    ranks = fastops.rank_cs(factor)
     diff = np.nanmean(np.abs(ranks[1:] - ranks[:-1]))
     return float(diff) if np.isfinite(diff) else np.nan
 
@@ -31,7 +23,7 @@ def quantile_spread(factor: np.ndarray, fwd: np.ndarray, q=5) -> float:
         m = np.isfinite(a) & np.isfinite(r)
         if m.sum() < q * 10:
             continue
-        ranks = pd.Series(a[m]).rank(pct=True).to_numpy()
+        ranks = fastops.rank_cs(a[m].reshape(1, -1)).flatten()
         top = r[m][ranks >= 1 - 1/q]
         bot = r[m][ranks <= 1/q]
         if len(top) > 0 and len(bot) > 0:
@@ -68,3 +60,45 @@ def summarize_factor(factor: np.ndarray, fwd: np.ndarray, dates: list[str], min_
         "quantile_spread": quantile_spread(factor2, fwd2) if len(factor2) else np.nan,
         "year_rank_ic": by_year,
     }
+
+def summarize_factor_split(
+    factor: np.ndarray,
+    fwd: np.ndarray,
+    dates: list[str],
+    train_end: str = "20250831",
+    test_start: str = "20250901",
+    min_daily_valid: int = 30,
+) -> dict:
+    base = summarize_factor(factor, fwd, dates, min_daily_valid=min_daily_valid)
+    d = np.array(dates).astype(str)
+    train_mask = d <= train_end
+    test_mask = d >= test_start
+
+    train = summarize_factor(
+        factor[train_mask],
+        fwd[train_mask],
+        d[train_mask].tolist(),
+        min_daily_valid=min_daily_valid,
+    )
+    test = summarize_factor(
+        factor[test_mask],
+        fwd[test_mask],
+        d[test_mask].tolist(),
+        min_daily_valid=min_daily_valid,
+    )
+
+    base.update({
+        "train_mean_rank_ic": train.get("mean_rank_ic"),
+        "train_rank_icir": train.get("rank_icir"),
+        "test_mean_rank_ic": test.get("mean_rank_ic"),
+        "test_rank_icir": test.get("rank_icir"),
+    })
+
+    tr = base.get("train_mean_rank_ic")
+    te = base.get("test_mean_rank_ic")
+    if tr is not None and te is not None and np.isfinite(tr) and np.isfinite(te):
+        same_sign = 1.0 if tr * te > 0 else 0.25
+        base["score"] = abs(te) * abs(base.get("test_rank_icir", 0) or 0) * same_sign
+    else:
+        base["score"] = np.nan
+    return base
