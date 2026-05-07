@@ -28,13 +28,17 @@ def rolling_apply(x, window, func, min_periods=None):
 def ref(x, window):
     return pd.DataFrame(x).shift(window).to_numpy(dtype=float)
 
-def ts_mean(x, w): return rolling_apply(x, w, lambda r: r.mean())
-def ts_sum(x, w): return rolling_apply(x, w, lambda r: r.sum())
-def ts_std(x, w): return rolling_apply(x, w, lambda r: r.std(ddof=0))
-def ts_var(x, w): return rolling_apply(x, w, lambda r: r.var(ddof=0))
-def ts_max(x, w): return rolling_apply(x, w, lambda r: r.max())
-def ts_min(x, w): return rolling_apply(x, w, lambda r: r.min())
-def ts_med(x, w): return rolling_apply(x, w, lambda r: r.median())
+from . import fastops
+
+def ts_mean(x, w): return fastops.fast_rolling_mean(x, w)
+def ts_sum(x, w): return fastops.fast_rolling_sum(x, w)
+def ts_std(x, w): return fastops.fast_rolling_std(x, w)
+def ts_var(x, w): return fastops.fast_rolling_std(x, w)**2
+def ts_max(x, w): return fastops.fast_rolling_max(x, w)
+def ts_min(x, w): return fastops.fast_rolling_min(x, w)
+def ts_med(x, w):
+    # Median is hard to optimize with Numba without complex logic, keep as is for now or use bottleneck
+    return rolling_apply(x, w, lambda r: r.median())
 def ts_delta(x, w): return x - ref(x, w)
 def ts_pct_change(x, w):
     lag = ref(x, w)
@@ -53,31 +57,20 @@ def ts_skew(x, w):
     return pd.DataFrame(x).rolling(window=w, min_periods=w).skew().to_numpy(dtype=float)
 def ts_kurt(x, w):
     return pd.DataFrame(x).rolling(window=w, min_periods=w).kurt().to_numpy(dtype=float)
-def ts_rank(x, w):
-    df = pd.DataFrame(x)
-    def last_rank(a):
-        s = pd.Series(a)
-        return s.rank(pct=True).iloc[-1]
-    return df.rolling(window=w, min_periods=w).apply(last_rank, raw=False).to_numpy(dtype=float)
-def ts_wma(x, w):
-    weights = np.arange(1, w + 1, dtype=float)
-    weights /= weights.sum()
-    df = pd.DataFrame(x)
-    def wma(a):
-        return np.nansum(a * weights)
-    return df.rolling(window=w, min_periods=w).apply(wma, raw=True).to_numpy(dtype=float)
+def ts_rank(x, w): return fastops.fast_rolling_rank(x, w)
+def ts_wma(x, w): return fastops.fast_rolling_wma(x, w)
 def ts_ema(x, w):
+    # EMA is already relatively fast with Pandas ewm, but can be optimized if needed
     return pd.DataFrame(x).ewm(span=w, min_periods=w, adjust=False).mean().to_numpy(dtype=float)
 def ts_cov(x, y, w):
-    out = np.full_like(x, np.nan, dtype=float)
-    for j in range(x.shape[1]):
-        out[:, j] = pd.Series(x[:, j]).rolling(w, min_periods=w).cov(pd.Series(y[:, j])).to_numpy()
-    return out
+    # Vectorized covariance: E[XY] - E[X]E[Y]
+    mean_x = fastops.fast_rolling_mean(x, w)
+    mean_y = fastops.fast_rolling_mean(y, w)
+    mean_xy = fastops.fast_rolling_mean(x * y, w)
+    return mean_xy - mean_x * mean_y
+
 def ts_corr(x, y, w):
-    out = np.full_like(x, np.nan, dtype=float)
-    for j in range(x.shape[1]):
-        out[:, j] = pd.Series(x[:, j]).rolling(w, min_periods=w).corr(pd.Series(y[:, j])).to_numpy()
-    return out
+    return fastops.fast_rolling_corr(x, y, w)
 
 UNARY = {"Abs": abs_, "SLog1p": slog1p, "Inv": inv, "Sign": sign, "Log": log, "Rank": rank_cs}
 BINARY = {"Add": add, "Sub": sub, "Mul": mul, "Div": div, "Pow": pow_, "Greater": greater, "Less": less}

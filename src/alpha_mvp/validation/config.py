@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ValidationConfig:
-    duckdb_path: str
+    duckdb_path: str = ""
     top100_path: str = "outputs/real_all/top100.csv"
     out_dir: str = "outputs/validation_real_all"
     start: str = "20180101"
@@ -33,3 +33,9 @@ class ValidationConfig:
     use_gpu: bool = False
     duckdb_threads: int = 24
     duckdb_memory_limit: str = "24GB"
+    top_n: int = 100
+    overwrite_cache: bool = False
+    skip_vectorbot: bool = False
+    skip_alphalens: bool = False
+    skip_reports: bool = False
+    from_step: int = 1

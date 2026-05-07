@@ -31,13 +31,15 @@ def _first_existing_table(conn, candidates):
             return t
     return candidates[0]
 
-def load_from_duckdb(duckdb_path: str, pool_json: str | None, start: str, end: str) -> pd.DataFrame:
+def load_from_duckdb(duckdb_path: str, pool_json: str | None, start: str, end: str, columns: list[str] | None = None) -> pd.DataFrame:
     import duckdb
     pool = load_pool(pool_json)
 
     conn = duckdb.connect(duckdb_path, read_only=True)
+    # 进一步优化并发设置
     conn.execute("SET threads=16")
-    conn.execute("SET memory_limit='24GB'")
+    conn.execute("SET memory_limit='32GB'")
+    conn.execute("SET preserve_insertion_order=false") # 提高查询并行度
 
     if pool:
         pool_df = pd.DataFrame({"ts_code": pool})
@@ -52,16 +54,30 @@ def load_from_duckdb(duckdb_path: str, pool_json: str | None, start: str, end: s
     basic = _first_existing_table(conn, TABLE_CANDIDATES["basic"])
     snap = _first_existing_table(conn, TABLE_CANDIDATES["snapshot"])
 
+    # 默认选择列，如果传入了 columns 则按需选择（减少 IO）
+    # 注意：trade_date 和 ts_code 是必须的
+    all_possible_cols = {
+        "open": "d.open", "high": "d.high", "low": "d.low", "close": "d.close", 
+        "pre_close": "d.pre_close", "pct_chg": "d.pct_chg", "vol": "d.vol", "amount": "d.amount",
+        "buy_sm_amount": "m.buy_sm_amount", "sell_sm_amount": "m.sell_sm_amount", 
+        "buy_md_amount": "m.buy_md_amount", "sell_md_amount": "m.sell_md_amount",
+        "buy_lg_amount": "m.buy_lg_amount", "sell_lg_amount": "m.sell_lg_amount", 
+        "net_mf_amount": "m.net_mf_amount",
+        "his_low": "c.his_low", "his_high": "c.his_high", "cost_5pct": "c.cost_5pct", 
+        "cost_15pct": "c.cost_15pct", "cost_50pct": "c.cost_50pct",
+        "cost_85pct": "c.cost_85pct", "cost_95pct": "c.cost_95pct", 
+        "weight_avg": "c.weight_avg", "winner_rate": "c.winner_rate",
+        "turnover_rate": "b.turnover_rate", "turnover_rate_f": "b.turnover_rate_f", 
+        "volume_ratio": "b.volume_ratio", "total_mv": "b.total_mv", "circ_mv": "b.circ_mv",
+        "industry": "s.industry"
+    }
+    
+    selected_cols_str = ", ".join([all_possible_cols[c] for c in (columns if columns else all_possible_cols.keys())])
+
     q = f"""
     select
       d.ts_code, d.trade_date,
-      d.open, d.high, d.low, d.close, d.pre_close, d.pct_chg, d.vol, d.amount,
-      m.buy_sm_amount, m.sell_sm_amount, m.buy_md_amount, m.sell_md_amount,
-      m.buy_lg_amount, m.sell_lg_amount, m.net_mf_amount,
-      c.his_low, c.his_high, c.cost_5pct, c.cost_15pct, c.cost_50pct,
-      c.cost_85pct, c.cost_95pct, c.weight_avg, c.winner_rate,
-      b.turnover_rate, b.turnover_rate_f, b.volume_ratio, b.total_mv, b.circ_mv,
-      s.industry
+      {selected_cols_str}
     from {daily} d
     {pool_join}
     left join {money} m on d.ts_code=m.ts_code and d.trade_date=m.trade_date
@@ -69,8 +85,8 @@ def load_from_duckdb(duckdb_path: str, pool_json: str | None, start: str, end: s
     left join {basic} b on d.ts_code=b.ts_code and d.trade_date=b.trade_date
     left join {snap} s on d.ts_code=s.ts_code
     where d.trade_date >= '{start}' and d.trade_date <= '{end}'
-    order by d.trade_date, d.ts_code
     """
+    # 移除 order by 以减少 DuckDB 端的计算开销，我们后面在 make_panels 中通过 mapping 处理顺序
     df = conn.execute(q).fetchdf()
     conn.close()
     return df

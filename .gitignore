@@ -42,3 +42,44 @@ htmlcov/
 # Temp / backup
 *.tmp
 *.bak
+
+# Do not upload HTML and PNG files
+*.html
+*.png
+
+# Do not upload HTML and PNG files
+*.html
+*.png
+
+# Do not upload generated output folders under outputs at any depth
+outputs/**/alphalens/
+outputs/**/vectorbot/
+outputs/**/plots/
+outputs/**/cache/
+
+# Do not upload HTML and PNG files
+*.html
+*.png
+
+# Do not upload generated folders under outputs at any depth
+# Ignore all contents under outputs
+outputs/*
+
+# But keep outputs/expressions
+!outputs/expressions/
+!outputs/expressions/**
+
+
+# Ignore everything under outputs
+outputs/**
+
+# Keep outputs directory itself
+!outputs/
+
+# Keep outputs/expressions and all files inside it
+!outputs/expressions/
+!outputs/expressions/**
+
+# Keep only this file under outputs/real_all
+!outputs/real_all/
+!outputs/real_all/top100.csv

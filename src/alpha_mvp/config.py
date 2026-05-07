@@ -42,3 +42,10 @@ class RunConfig:
     expr_file: str | None = None
     start_expr: int = 1
     end_expr: int | None = None
+    force_rerun: bool = False
+    
+    # Phase 2 Field Selection
+    fields: Sequence[str] | None = None
+    exclude_fields: Sequence[str] | None = None
+    field_file: str | None = None
+    field_set: str | None = None

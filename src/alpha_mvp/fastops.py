@@ -181,3 +181,146 @@ def fast_daily_corr(x, y, rank=False):
 
 def fast_rolling_corr(x, y, w):
     return rolling_corr(x, y, w)
+
+@njit(cache=True, parallel=True)
+def fast_rolling_mean(x, w):
+    n, k = x.shape
+    out = np.full((n, k), np.nan, dtype=np.float64)
+    for j in prange(k):
+        asum = 0.0
+        count = 0
+        for i in range(n):
+            val = x[i, j]
+            if np.isfinite(val):
+                asum += val
+                count += 1
+            
+            if i >= w:
+                prev_val = x[i - w, j]
+                if np.isfinite(prev_val):
+                    asum -= prev_val
+                    count -= 1
+            
+            if i >= w - 1 and count >= w // 2 + 1:
+                out[i, j] = asum / count if count > 0 else np.nan
+    return out
+
+@njit(cache=True, parallel=True)
+def fast_rolling_std(x, w):
+    n, k = x.shape
+    out = np.full((n, k), np.nan, dtype=np.float64)
+    for j in prange(k):
+        for i in range(w - 1, n):
+            asum = 0.0
+            asq_sum = 0.0
+            count = 0
+            for t in range(i - w + 1, i + 1):
+                val = x[t, j]
+                if np.isfinite(val):
+                    asum += val
+                    asq_sum += val * val
+                    count += 1
+            if count >= w // 2 + 1:
+                mean = asum / count
+                var = asq_sum / count - mean * mean
+                out[i, j] = np.sqrt(max(0, var))
+    return out
+
+@njit(cache=True, parallel=True)
+def fast_rolling_sum(x, w):
+    n, k = x.shape
+    out = np.full((n, k), np.nan, dtype=np.float64)
+    for j in prange(k):
+        asum = 0.0
+        count = 0
+        for i in range(n):
+            val = x[i, j]
+            if np.isfinite(val):
+                asum += val
+                count += 1
+            if i >= w:
+                prev_val = x[i - w, j]
+                if np.isfinite(prev_val):
+                    asum -= prev_val
+                    count -= 1
+            if i >= w - 1:
+                out[i, j] = asum if count >= w // 2 + 1 else np.nan
+    return out
+
+@njit(cache=True, parallel=True)
+def fast_rolling_max(x, w):
+    n, k = x.shape
+    out = np.full((n, k), np.nan, dtype=np.float64)
+    for j in prange(k):
+        for i in range(w - 1, n):
+            cur_max = -np.inf
+            found = False
+            for t in range(i - w + 1, i + 1):
+                val = x[t, j]
+                if np.isfinite(val):
+                    if val > cur_max:
+                        cur_max = val
+                    found = True
+            if found:
+                out[i, j] = cur_max
+    return out
+
+@njit(cache=True, parallel=True)
+def fast_rolling_min(x, w):
+    n, k = x.shape
+    out = np.full((n, k), np.nan, dtype=np.float64)
+    for j in prange(k):
+        for i in range(w - 1, n):
+            cur_min = np.inf
+            found = False
+            for t in range(i - w + 1, i + 1):
+                val = x[t, j]
+                if np.isfinite(val):
+                    if val < cur_min:
+                        cur_min = val
+                    found = True
+            if found:
+                out[i, j] = cur_min
+    return out
+
+@njit(cache=True, parallel=True)
+def fast_rolling_rank(x, w):
+    n, k = x.shape
+    out = np.full((n, k), np.nan, dtype=np.float64)
+    for j in prange(k):
+        for i in range(w - 1, n):
+            val = x[i, j]
+            if not np.isfinite(val):
+                continue
+            count = 0
+            rank = 0
+            for t in range(i - w + 1, i + 1):
+                cur = x[t, j]
+                if np.isfinite(cur):
+                    count += 1
+                    if cur < val:
+                        rank += 1
+                    elif cur == val:
+                        rank += 0.5
+            if count >= w // 2 + 1:
+                out[i, j] = rank / count
+    return out
+
+@njit(cache=True, parallel=True)
+def fast_rolling_wma(x, w):
+    n, k = x.shape
+    out = np.full((n, k), np.nan, dtype=np.float64)
+    weights = np.arange(1, w + 1, dtype=np.float64)
+    w_sum = weights.sum()
+    for j in prange(k):
+        for i in range(w - 1, n):
+            asum = 0.0
+            found = 0
+            for t in range(w):
+                val = x[i - w + 1 + t, j]
+                if np.isfinite(val):
+                    asum += val * weights[t]
+                    found += 1
+            if found == w:
+                out[i, j] = asum / w_sum
+    return out

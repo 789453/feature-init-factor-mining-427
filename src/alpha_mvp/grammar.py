@@ -161,14 +161,34 @@ def save_all_expressions(fields: list[str], windows=(10,20,30,40,50),
 
 def load_expression_range(expr_file: str, start: int = 1, end: int | None = None) -> list[str]:
     exprs = []
-    with open(expr_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split("\t", 1)
-            if len(parts) == 2:
-                idx = int(parts[0])
-                if start <= idx <= (end if end is not None else float("inf")):
-                    exprs.append(parts[1])
+    file_path = Path(expr_file)
+    
+    if file_path.suffix.lower() == ".csv":
+        import pandas as pd
+        df = pd.read_csv(expr_file)
+        # 尝试寻找 expr 列
+        col = "expr" if "expr" in df.columns else (df.columns[0] if len(df.columns) > 0 else None)
+        if col:
+            raw_list = df[col].tolist()
+            # start 是 1-based index
+            s_idx = start - 1
+            e_idx = end if end is not None else len(raw_list)
+            exprs = raw_list[s_idx:e_idx]
+    else:
+        with open(expr_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split("\t", 1)
+                if len(parts) == 2:
+                    try:
+                        idx = int(parts[0])
+                        if start <= idx <= (end if end is not None else float("inf")):
+                            exprs.append(parts[1])
+                    except ValueError:
+                        # 如果不是 tab 分隔的带索引格式，则尝试作为纯文本行处理
+                        exprs.append(line)
+                else:
+                    exprs.append(line)
     return exprs

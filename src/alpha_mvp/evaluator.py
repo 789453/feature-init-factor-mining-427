@@ -28,6 +28,11 @@ class BatchEvaluator:
         except Exception as e:
             return None, f"EVAL_ERROR:{type(e).__name__}:{e}"
 
+    def eval_batch(self, exprs: list[str], max_workers: int = 4) -> list[tuple[np.ndarray | None, str]]:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            return list(executor.map(self.eval_expr, exprs))
+
     def _eval_node(self, node: Node) -> np.ndarray:
         key = canonical(node)
         if key in self._cache:
@@ -65,13 +70,32 @@ class BatchEvaluator:
         self._cache[key] = out
         return out
 
-def make_panels(df, feature_cols: list[str], value_col="close"):
-    pivots = {}
+def make_panels(df: pd.DataFrame, feature_cols: list[str], value_col="close"):
+    """
+    高效构建面板数据，避免多次 pivot
+    """
+    # 确保日期和代码有序
     dates = sorted(df["trade_date"].astype(str).unique().tolist())
     codes = sorted(df["ts_code"].unique().tolist())
+    
+    date_map = {d: i for i, d in enumerate(dates)}
+    code_map = {c: i for i, c in enumerate(codes)}
+    
+    n_dates = len(dates)
+    n_codes = len(codes)
+    
+    # 提取索引位置
+    row_idx = df["trade_date"].astype(str).map(date_map).values
+    col_idx = df["ts_code"].map(code_map).values
+    
+    pivots = {}
     for c in feature_cols + [value_col]:
         if c not in df.columns:
             continue
-        p = df.pivot(index="trade_date", columns="ts_code", values=c).reindex(index=dates, columns=codes)
-        pivots[c] = p.to_numpy(dtype=float)
+        # 预分配矩阵
+        arr = np.full((n_dates, n_codes), np.nan, dtype=np.float64)
+        # 填充数据
+        arr[row_idx, col_idx] = df[c].values
+        pivots[c] = arr
+        
     return pivots, dates, codes
