@@ -20,12 +20,25 @@ from .evaluator import BatchEvaluator, make_panels
 from .metrics import forward_returns
 from .parser import parse_expr, canonical
 from .attribution import run_all_attribution
+from .attribution_extended import run_extended_attribution
 from .ranking import interleave_by_group, stratified_ranking
 from .signature import build_manifest_from_config, compute_run_signature
+from .candidate_sampler_extended import select_for_fine_screen, export_candidate_expr_file
 
 def compute_run_signature(manifest: dict) -> str:
     content = json.dumps(manifest, sort_keys=True)
     return hashlib.sha256(content.encode()).hexdigest()
+
+def _write_checkpoint(out: Path, df: pd.DataFrame, pct: float, topk: int):
+    ckpt_dir = out / "checkpoints"
+    ckpt_dir.mkdir(exist_ok=True)
+    if df.empty:
+        return
+    fn = ckpt_dir / f"top{topk}_pct_{pct:.0%}.csv"
+    df.sort_values("score_ranked", ascending=False, na_position="last").head(topk).to_csv(
+        fn, index=False, encoding="utf-8-sig"
+    )
+    print(f"[Checkpoint] Saved {topk} results at {pct:.0%} to {fn}")
 
 def run_phase2(cfg: RunConfig) -> dict:
     out = Path(cfg.out_dir)
@@ -126,27 +139,33 @@ def run_phase2(cfg: RunConfig) -> dict:
         dates=dates,
         codes=codes,
         windows=cfg.eval.windows,
-        max_depth=10,  # 允许更深，因为生成器已校验
+        max_depth=10,
         max_nodes=50,
     )
 
-    # 检查是否已存在结果，实现增量过滤
+    # 检查是否已存在结果，实现增量过滤 (断点恢复)
     completed_hashes = store.completed_expr_hashes(run_signature)
     todo_all = [r for r in expr_records if r.expr_hash not in completed_hashes]
     total = len(todo_all)
+    total_all = len(expr_records)
     
     if total == 0:
-        print(f"[Phase2] All {len(expr_records)} expressions already completed for signature {run_signature[:8]}.")
+        print(f"[Phase2] All {total_all} expressions already completed for signature {run_signature[:8]}.")
     else:
-        print(f"[Phase2] Starting evaluation: {total} new expressions (Total {len(expr_records)}), run_signature={run_signature[:8]}")
+        print(f"[Phase2] Starting: {total} new / {total_all} total expressions (resume={cfg.resume})")
 
     results_buffer = []
     last_progress = time.time()
+    next_checkpoint_ratio = cfg.first_checkpoint_pct
+    checkpoint_ratios_done = set()
+    done_count = len(completed_hashes)
     
     # 分批处理以提高效率
     batch_size = cfg.batch_size
     for i in range(0, total, batch_size):
-        batch_tasks = todo_all[i:i+batch_size]
+        batch_start_idx = i
+        batch_end_idx = min(i + batch_size, total)
+        batch_tasks = todo_all[batch_start_idx:batch_end_idx]
         batch_exprs = [t.expr for t in batch_tasks]
         
         # 并行计算这一批表达式
@@ -166,7 +185,6 @@ def run_phase2(cfg: RunConfig) -> dict:
                     cov = float(np.nanmean(np.isfinite(arr)))
                     to = turnover_proxy(arr)
                     
-                    # 获取元数据
                     meta = next((m for m in metas if m.expr_hash == expr_hash), None)
                     nodes = meta.nodes if meta else 10
                     complexity_score = 1.0 - (nodes / 50.0)
@@ -185,12 +203,41 @@ def run_phase2(cfg: RunConfig) -> dict:
             store.write_results(run_signature, results_buffer)
             results_buffer.clear()
             
-        if time.time() - last_progress > cfg.progress_min_interval_sec:
-            print(f"[Phase2 Progress] {min(i+batch_size, total)}/{total} ({min(i+batch_size, total)/total:.1%})")
-            last_progress = time.time()
+        # 进度报告和checkpoint
+        done_count = len(completed_hashes) + batch_end_idx
+        ratio = done_count / total_all
+        now = time.time()
+        
+        if ratio >= next_checkpoint_ratio and next_checkpoint_ratio not in checkpoint_ratios_done:
+            # 写入当前所有结果并保存checkpoint
+            store.write_results(run_signature, results_buffer)
+            results_buffer.clear()
+            
+            # 查询当前所有结果
+            query = """
+            SELECT r.*, c.template_family, c.template_name, c.nodes, c.complexity_tier
+            FROM factor_results r
+            JOIN expression_catalog c ON r.expr_hash = c.expr_hash
+            WHERE r.run_signature = ?
+            """
+            current_df = store.con.execute(query, (run_signature,)).df()
+            if not current_df.empty:
+                current_df = apply_ranked_score(current_df)
+                _write_checkpoint(out, current_df, next_checkpoint_ratio, cfg.topk_checkpoint)
+            checkpoint_ratios_done.add(next_checkpoint_ratio)
+            next_checkpoint_ratio = max(
+                cfg.checkpoint_pct,
+                (int(ratio / cfg.checkpoint_pct) + 1) * cfg.checkpoint_pct,
+            )
+            
+        if now - last_progress > cfg.progress_min_interval_sec:
+            eval_speed = batch_end_idx / (now - last_progress) if now > last_progress else 0
+            print(f"[Phase2 Progress] {done_count}/{total_all} ({ratio:.1%}) | Speed: {eval_speed:.0f} batch/s | Buffer: {len(results_buffer)}")
+            last_progress = now
 
     if results_buffer:
         store.write_results(run_signature, results_buffer)
+        results_buffer.clear()
     
     # 9. 计算 Rank Score 并导出结果
     query = """
@@ -246,11 +293,32 @@ def run_phase2(cfg: RunConfig) -> dict:
     ranking_strategy = getattr(cfg, 'ranking_strategy', 'interleave')
     top_interleaved = interleave_top_results(full_sorted, top_n=100, strategy=ranking_strategy)
     top_interleaved.to_csv(out / "top100_phase2.csv", index=False)
-    
-    # 10. 运行 Attribution
-    run_all_attribution(store.con, run_signature, str(out))
-    
+
+    # 10. 运行 Attribution (使用扩展版本)
+    extended_attribution = getattr(cfg, 'extended_attribution', True)
+    if extended_attribution:
+        coarse_sig = getattr(cfg, 'coarse_signature', None)
+        run_extended_attribution(store.con, run_signature, str(out), coarse_sig)
+    else:
+        run_all_attribution(store.con, run_signature, str(out))
+
+    # 11. 导出细筛候选表达式文件
+    if getattr(cfg, 'phase_type', None) == 'coarse':
+        # 粗筛阶段结束后导出候选
+        fine_candidates = select_for_fine_screen(
+            all_res,
+            top_k=getattr(cfg, 'candidate_top_k', 1000),
+            sample_n=getattr(cfg, 'candidate_sample_n', 1000),
+            min_per_template_family=getattr(cfg, 'candidate_min_per_family', 20),
+            alpha=getattr(cfg, 'candidate_alpha', 0.85),
+            seed=cfg.seed
+        )
+        if not fine_candidates.empty:
+            candidate_file = export_dir / "fine_candidates.expr"
+            export_candidate_expr_file(fine_candidates, str(candidate_file))
+            print(f"[Phase2] Exported {len(fine_candidates)} candidates for fine screening")
+
     print(f"[Phase2] Finished. Results in {out}")
     store.close()
-    
+
     return manifest

@@ -40,7 +40,7 @@ class BatchEvaluator:
         if node.kind == "field":
             if node.value not in self.panels:
                 raise EvalError(f"unknown field {node.value}")
-            out = self.panels[node.value]
+            out = self.panels[node.value].copy()
         elif node.kind == "const":
             out = np.full_like(next(iter(self.panels.values())), float(node.value), dtype=float)
         elif node.kind == "op":

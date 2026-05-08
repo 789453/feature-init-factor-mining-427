@@ -64,6 +64,7 @@ def generate_expressions_from_specs(
         "binary_same_ts": build_binary_same_ts,
         "binary": build_binary_same_ts,          # 兼容旧family
         "binary_mixed_ts": build_binary_mixed_ts,
+        "binary_mixed": build_binary_mixed_ts,   # 修复：匹配template_spec.py中的family值
         "multi_window": build_multi_window,
         "triple": build_triple_modulation,
         "quad": build_quad_balanced,

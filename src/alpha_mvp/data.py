@@ -42,9 +42,9 @@ def load_from_duckdb(duckdb_path: str, pool_json: str | None, start: str, end: s
     conn.execute("SET preserve_insertion_order=false") # 提高查询并行度
 
     if pool:
-        pool_df = pd.DataFrame({"ts_code": pool})
-        conn.register("pool_df", pool_df)
-        pool_join = "join pool_df p on d.ts_code=p.ts_code"
+        pool_list = [{"ts_code": c} for c in pool]
+        conn.execute("CREATE TEMP TABLE pool_tmp AS SELECT * FROM (VALUES " + ",".join([f"('{c}')" for c in pool]) + ") AS t(ts_code)")
+        pool_join = "JOIN pool_tmp p ON d.ts_code = p.ts_code"
     else:
         pool_join = ""
 

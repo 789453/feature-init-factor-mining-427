@@ -8,25 +8,23 @@ import duckdb
 from pathlib import Path
 from typing import Dict, List, Any
 
+from .attribution import compute_field_stats, compute_operator_stats, compute_window_stats, compute_template_stats
+
 def compute_field_operator_stats(con: duckdb.DuckDBPyConnection, run_signature: str) -> pd.DataFrame:
     """字段×算子组合统计"""
     query = f"""
-    SELECT 
+    SELECT
         f.field,
         o.operator,
         COUNT(DISTINCT r.expr_hash) as n_expr,
         COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) as n_ok,
-        CASE 
-            WHEN COUNT(DISTINCT r.expr_hash) > 0 
+        CASE
+            WHEN COUNT(DISTINCT r.expr_hash) > 0
             THEN COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) * 100.0 / COUNT(DISTINCT r.expr_hash)
-            ELSE 0 
+            ELSE 0
         END as valid_rate,
         AVG(r.score_ranked) as mean_score_ranked,
         MEDIAN(r.score_ranked) as median_score_ranked,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r.score_ranked) as p75_score_ranked,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY r.score_ranked) as p90_score_ranked,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.99) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top1pct_rate,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.95) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top5pct_rate,
         AVG(r.oriented_test_mean_rank_ic) as mean_oriented_test_rank_ic,
         MEDIAN(r.oriented_test_mean_rank_ic) as median_oriented_test_rank_ic,
         AVG(r.oriented_test_rank_icir) as mean_oriented_test_rank_icir,
@@ -46,22 +44,18 @@ def compute_field_operator_stats(con: duckdb.DuckDBPyConnection, run_signature: 
 def compute_field_window_stats(con: duckdb.DuckDBPyConnection, run_signature: str) -> pd.DataFrame:
     """字段×窗口组合统计"""
     query = f"""
-    SELECT 
+    SELECT
         f.field,
         w.window,
         COUNT(DISTINCT r.expr_hash) as n_expr,
         COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) as n_ok,
-        CASE 
-            WHEN COUNT(DISTINCT r.expr_hash) > 0 
+        CASE
+            WHEN COUNT(DISTINCT r.expr_hash) > 0
             THEN COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) * 100.0 / COUNT(DISTINCT r.expr_hash)
-            ELSE 0 
+            ELSE 0
         END as valid_rate,
         AVG(r.score_ranked) as mean_score_ranked,
         MEDIAN(r.score_ranked) as median_score_ranked,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r.score_ranked) as p75_score_ranked,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY r.score_ranked) as p90_score_ranked,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.99) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top1pct_rate,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.95) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top5pct_rate,
         AVG(r.oriented_test_mean_rank_ic) as mean_oriented_test_rank_ic,
         MEDIAN(r.oriented_test_mean_rank_ic) as median_oriented_test_rank_ic,
         AVG(r.oriented_test_rank_icir) as mean_oriented_test_rank_icir,
@@ -81,22 +75,18 @@ def compute_field_window_stats(con: duckdb.DuckDBPyConnection, run_signature: st
 def compute_operator_window_stats(con: duckdb.DuckDBPyConnection, run_signature: str) -> pd.DataFrame:
     """算子×窗口组合统计"""
     query = f"""
-    SELECT 
+    SELECT
         o.operator,
         w.window,
         COUNT(DISTINCT r.expr_hash) as n_expr,
         COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) as n_ok,
-        CASE 
-            WHEN COUNT(DISTINCT r.expr_hash) > 0 
+        CASE
+            WHEN COUNT(DISTINCT r.expr_hash) > 0
             THEN COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) * 100.0 / COUNT(DISTINCT r.expr_hash)
-            ELSE 0 
+            ELSE 0
         END as valid_rate,
         AVG(r.score_ranked) as mean_score_ranked,
         MEDIAN(r.score_ranked) as median_score_ranked,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r.score_ranked) as p75_score_ranked,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY r.score_ranked) as p90_score_ranked,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.99) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top1pct_rate,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.95) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top5pct_rate,
         AVG(r.oriented_test_mean_rank_ic) as mean_oriented_test_rank_ic,
         MEDIAN(r.oriented_test_mean_rank_ic) as median_oriented_test_rank_ic,
         AVG(r.oriented_test_rank_icir) as mean_oriented_test_rank_icir,
@@ -116,23 +106,19 @@ def compute_operator_window_stats(con: duckdb.DuckDBPyConnection, run_signature:
 def compute_template_operator_stats(con: duckdb.DuckDBPyConnection, run_signature: str) -> pd.DataFrame:
     """模板×算子组合统计"""
     query = f"""
-    SELECT 
+    SELECT
         c.template_family,
         c.template_name,
         o.operator,
         COUNT(DISTINCT r.expr_hash) as n_expr,
         COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) as n_ok,
-        CASE 
-            WHEN COUNT(DISTINCT r.expr_hash) > 0 
+        CASE
+            WHEN COUNT(DISTINCT r.expr_hash) > 0
             THEN COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) * 100.0 / COUNT(DISTINCT r.expr_hash)
-            ELSE 0 
+            ELSE 0
         END as valid_rate,
         AVG(r.score_ranked) as mean_score_ranked,
         MEDIAN(r.score_ranked) as median_score_ranked,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r.score_ranked) as p75_score_ranked,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY r.score_ranked) as p90_score_ranked,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.99) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top1pct_rate,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.95) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top5pct_rate,
         AVG(r.oriented_test_mean_rank_ic) as mean_oriented_test_rank_ic,
         MEDIAN(r.oriented_test_mean_rank_ic) as median_oriented_test_rank_ic,
         AVG(r.oriented_test_rank_icir) as mean_oriented_test_rank_icir,
@@ -152,23 +138,19 @@ def compute_template_operator_stats(con: duckdb.DuckDBPyConnection, run_signatur
 def compute_template_window_stats(con: duckdb.DuckDBPyConnection, run_signature: str) -> pd.DataFrame:
     """模板×窗口组合统计"""
     query = f"""
-    SELECT 
+    SELECT
         c.template_family,
         c.template_name,
         w.window,
         COUNT(DISTINCT r.expr_hash) as n_expr,
         COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) as n_ok,
-        CASE 
-            WHEN COUNT(DISTINCT r.expr_hash) > 0 
+        CASE
+            WHEN COUNT(DISTINCT r.expr_hash) > 0
             THEN COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) * 100.0 / COUNT(DISTINCT r.expr_hash)
-            ELSE 0 
+            ELSE 0
         END as valid_rate,
         AVG(r.score_ranked) as mean_score_ranked,
         MEDIAN(r.score_ranked) as median_score_ranked,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r.score_ranked) as p75_score_ranked,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY r.score_ranked) as p90_score_ranked,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.99) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top1pct_rate,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.95) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top5pct_rate,
         AVG(r.oriented_test_mean_rank_ic) as mean_oriented_test_rank_ic,
         MEDIAN(r.oriented_test_mean_rank_ic) as median_oriented_test_rank_ic,
         AVG(r.oriented_test_rank_icir) as mean_oriented_test_rank_icir,
@@ -188,22 +170,18 @@ def compute_template_window_stats(con: duckdb.DuckDBPyConnection, run_signature:
 def compute_template_combo_stats(con: duckdb.DuckDBPyConnection, run_signature: str) -> pd.DataFrame:
     """模板组合统计"""
     query = f"""
-    SELECT 
+    SELECT
         c.template_family,
         c.template_name,
         COUNT(DISTINCT r.expr_hash) as n_expr,
         COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) as n_ok,
-        CASE 
-            WHEN COUNT(DISTINCT r.expr_hash) > 0 
+        CASE
+            WHEN COUNT(DISTINCT r.expr_hash) > 0
             THEN COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) * 100.0 / COUNT(DISTINCT r.expr_hash)
-            ELSE 0 
+            ELSE 0
         END as valid_rate,
         AVG(r.score_ranked) as mean_score_ranked,
         MEDIAN(r.score_ranked) as median_score_ranked,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r.score_ranked) as p75_score_ranked,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY r.score_ranked) as p90_score_ranked,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.99) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top1pct_rate,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.95) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top5pct_rate,
         AVG(r.oriented_test_mean_rank_ic) as mean_oriented_test_rank_ic,
         MEDIAN(r.oriented_test_mean_rank_ic) as median_oriented_test_rank_ic,
         AVG(r.oriented_test_rank_icir) as mean_oriented_test_rank_icir,
@@ -222,22 +200,18 @@ def compute_template_combo_stats(con: duckdb.DuckDBPyConnection, run_signature: 
 def compute_order_complexity_stats(con: duckdb.DuckDBPyConnection, run_signature: str) -> pd.DataFrame:
     """阶数复杂度统计"""
     query = f"""
-    SELECT 
+    SELECT
         c.template_order,
         c.complexity_tier,
         COUNT(DISTINCT r.expr_hash) as n_expr,
         COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) as n_ok,
-        CASE 
-            WHEN COUNT(DISTINCT r.expr_hash) > 0 
+        CASE
+            WHEN COUNT(DISTINCT r.expr_hash) > 0
             THEN COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked IS NOT NULL) * 100.0 / COUNT(DISTINCT r.expr_hash)
-            ELSE 0 
+            ELSE 0
         END as valid_rate,
         AVG(r.score_ranked) as mean_score_ranked,
         MEDIAN(r.score_ranked) as median_score_ranked,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r.score_ranked) as p75_score_ranked,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY r.score_ranked) as p90_score_ranked,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.99) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top1pct_rate,
-        COUNT(DISTINCT r.expr_hash) FILTER (WHERE r.score_ranked >= (SELECT PERCENTILE_CONT(0.95) FROM factor_results WHERE run_signature = '{run_signature}' AND score_ranked IS NOT NULL)) * 100.0 / COUNT(DISTINCT r.expr_hash) as top5pct_rate,
         AVG(r.oriented_test_mean_rank_ic) as mean_oriented_test_rank_ic,
         MEDIAN(r.oriented_test_mean_rank_ic) as median_oriented_test_rank_ic,
         AVG(r.oriented_test_rank_icir) as mean_oriented_test_rank_icir,
@@ -265,14 +239,14 @@ def compute_coarse_to_fine_decay(con: duckdb.DuckDBPyConnection, coarse_signatur
         FROM factor_results
         WHERE run_signature = '{fine_signature}'
     )
-    SELECT 
+    SELECT
         c.expr_hash,
         c.coarse_score,
         f.fine_score,
         f.fine_score - c.coarse_score as score_decay,
-        CASE 
+        CASE
             WHEN c.coarse_score > 0 THEN (f.fine_score - c.coarse_score) / c.coarse_score * 100.0
-            ELSE NULL 
+            ELSE NULL
         END as decay_ratio_percent
     FROM coarse_scores c
     JOIN fine_scores f ON c.expr_hash = f.expr_hash
@@ -281,19 +255,24 @@ def compute_coarse_to_fine_decay(con: duckdb.DuckDBPyConnection, coarse_signatur
     """
     return con.execute(query).df()
 
-def run_extended_attribution(con: duckdb.DuckDBPyConnection, run_signature: str, out_dir: str, 
+def run_extended_attribution(con: duckdb.DuckDBPyConnection, run_signature: str, out_dir: str,
                              coarse_signature: str = None, fine_signature: str = None):
     """运行扩展的归因分析"""
     export_dir = Path(out_dir) / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
-    
-    # 基础归因分析（保持向后兼容）
-    compute_field_stats(con, run_signature).to_csv(export_dir / "attribution_field.csv", index=False)
-    compute_operator_stats(con, run_signature).to_csv(export_dir / "attribution_operator.csv", index=False)
-    compute_window_stats(con, run_signature).to_csv(export_dir / "attribution_window.csv", index=False)
-    compute_template_stats(con, run_signature).to_csv(export_dir / "attribution_template.csv", index=False)
-    
-    # 扩展归因分析
+
+    basic_field = compute_field_stats(con, run_signature)
+    basic_field.to_csv(export_dir / "attribution_field.csv", index=False)
+
+    basic_op = compute_operator_stats(con, run_signature)
+    basic_op.to_csv(export_dir / "attribution_operator.csv", index=False)
+
+    basic_win = compute_window_stats(con, run_signature)
+    basic_win.to_csv(export_dir / "attribution_window.csv", index=False)
+
+    basic_tmpl = compute_template_stats(con, run_signature)
+    basic_tmpl.to_csv(export_dir / "attribution_template.csv", index=False)
+
     compute_field_operator_stats(con, run_signature).to_csv(export_dir / "attribution_field_operator.csv", index=False)
     compute_field_window_stats(con, run_signature).to_csv(export_dir / "attribution_field_window.csv", index=False)
     compute_operator_window_stats(con, run_signature).to_csv(export_dir / "attribution_operator_window.csv", index=False)
@@ -301,46 +280,35 @@ def run_extended_attribution(con: duckdb.DuckDBPyConnection, run_signature: str,
     compute_template_window_stats(con, run_signature).to_csv(export_dir / "attribution_template_window.csv", index=False)
     compute_template_combo_stats(con, run_signature).to_csv(export_dir / "attribution_template_combo.csv", index=False)
     compute_order_complexity_stats(con, run_signature).to_csv(export_dir / "attribution_order_complexity.csv", index=False)
-    
-    # 粗筛到细筛的衰减分析
+
     if coarse_signature and fine_signature:
         decay_stats = compute_coarse_to_fine_decay(con, coarse_signature, fine_signature)
         decay_stats.to_csv(export_dir / "attribution_coarse_to_fine_decay.csv", index=False)
-        
-        # 生成衰减统计摘要
+
+        import json
         decay_summary = {
             "total_expressions": len(decay_stats),
-            "mean_decay": decay_stats["score_decay"].mean(),
-            "median_decay": decay_stats["score_decay"].median(),
-            "std_decay": decay_stats["score_decay"].std(),
-            "positive_decay_ratio": (decay_stats["score_decay"] > 0).mean() * 100,
-            "large_decay_count": (decay_stats["score_decay"] < -0.1).sum(),
-            "improved_count": (decay_stats["score_decay"] > 0.1).sum()
+            "mean_decay": float(decay_stats["score_decay"].mean()) if len(decay_stats) > 0 else None,
+            "median_decay": float(decay_stats["score_decay"].median()) if len(decay_stats) > 0 else None,
+            "positive_decay_ratio": float((decay_stats["score_decay"] > 0).mean() * 100) if len(decay_stats) > 0 else None,
         }
-        
-        # 保存衰减摘要
-        import json
         with open(export_dir / "decay_summary.json", "w") as f:
             json.dump(decay_summary, f, indent=2, default=str)
 
 def generate_attribution_summary(con: duckdb.DuckDBPyConnection, run_signature: str) -> Dict[str, Any]:
     """生成归因分析摘要"""
-    # 基础统计
-    basic_stats = con.execute(f"""
-    SELECT 
+    result = con.execute(f"""
+    SELECT
         COUNT(DISTINCT expr_hash) as total_expressions,
         COUNT(DISTINCT expr_hash) FILTER (WHERE score_ranked IS NOT NULL) as valid_expressions,
         AVG(score_ranked) as mean_score,
-        MEDIAN(score_ranked) as median_score,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY score_ranked) as p90_score,
-        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY score_ranked) as p99_score
+        MEDIAN(score_ranked) as median_score
     FROM factor_results
     WHERE run_signature = '{run_signature}'
     """).fetchone()
-    
-    # 模板族统计
+
     template_stats = con.execute(f"""
-    SELECT 
+    SELECT
         template_family,
         COUNT(DISTINCT expr_hash) as count,
         AVG(score_ranked) as mean_score
@@ -350,16 +318,14 @@ def generate_attribution_summary(con: duckdb.DuckDBPyConnection, run_signature: 
     GROUP BY template_family
     ORDER BY mean_score DESC
     """).df().to_dict('records')
-    
+
     return {
         "basic_stats": {
-            "total_expressions": basic_stats[0],
-            "valid_expressions": basic_stats[1],
-            "valid_rate": basic_stats[1] / basic_stats[0] * 100 if basic_stats[0] > 0 else 0,
-            "mean_score": basic_stats[2],
-            "median_score": basic_stats[3],
-            "p90_score": basic_stats[4],
-            "p99_score": basic_stats[5]
+            "total_expressions": result[0],
+            "valid_expressions": result[1],
+            "valid_rate": result[1] / result[0] * 100 if result[0] > 0 else 0,
+            "mean_score": result[2],
+            "median_score": result[3],
         },
         "template_performance": template_stats
     }

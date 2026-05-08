@@ -105,6 +105,31 @@ class DuckDBJobStore:
         self.con.execute("CREATE TABLE IF NOT EXISTS expression_operator_link (expr_hash VARCHAR, operator VARCHAR, position INTEGER, PRIMARY KEY(expr_hash, operator, position))")
         self.con.execute("CREATE TABLE IF NOT EXISTS expression_window_link (expr_hash VARCHAR, \"window\" INTEGER, position INTEGER, PRIMARY KEY(expr_hash, \"window\", position))")
 
+        # 6. 可复用结果索引表（第二层过滤）
+        self.con.execute("""
+        CREATE TABLE IF NOT EXISTS reusable_results_index (
+            eval_signature VARCHAR,
+            expr_hash VARCHAR,
+            source_run_signature VARCHAR,
+            status VARCHAR,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(eval_signature, expr_hash)
+        )
+        """)
+
+        # 7. 表达式评估谱系表（第三层过滤）
+        self.con.execute("""
+        CREATE TABLE IF NOT EXISTS expression_eval_lineage (
+            expr_hash VARCHAR,
+            coarse_run_signature VARCHAR,
+            fine_run_signature VARCHAR,
+            coarse_score DOUBLE,
+            fine_score DOUBLE,
+            score_decay DOUBLE,
+            PRIMARY KEY(expr_hash, coarse_run_signature, fine_run_signature)
+        )
+        """)
+
     def init_run(self, manifest: dict, run_signature: str):
         self.con.execute("""
             INSERT OR IGNORE INTO runs 
@@ -201,6 +226,41 @@ class DuckDBJobStore:
             UPDATE expression_jobs SET status = 'FAILED', error = ?, finished_at = ?
             WHERE run_signature = ? AND expr_hash = ?
         """, (error, datetime.now(), run_signature, expr_hash))
+
+    def add_reusable_result(self, eval_signature: str, expr_hash: str, source_run_signature: str, status: str = "COMPLETED"):
+        """添加可复用结果索引"""
+        self.con.execute("""
+            INSERT OR REPLACE INTO reusable_results_index (eval_signature, expr_hash, source_run_signature, status)
+            VALUES (?, ?, ?, ?)
+        """, (eval_signature, expr_hash, source_run_signature, status))
+
+    def get_reusable_results(self, eval_signature: str) -> set[str]:
+        """获取可复用的结果"""
+        res = self.con.execute(
+            "SELECT expr_hash FROM reusable_results_index WHERE eval_signature = ? AND status = 'COMPLETED'",
+            (eval_signature,)
+        ).fetchall()
+        return {r[0] for r in res}
+
+    def add_lineage(self, expr_hash: str, coarse_run_signature: str, fine_run_signature: str,
+                   coarse_score: float, fine_score: float):
+        """添加表达式谱系记录"""
+        score_decay = fine_score - coarse_score if coarse_score and fine_score else None
+        self.con.execute("""
+            INSERT OR REPLACE INTO expression_eval_lineage
+            (expr_hash, coarse_run_signature, fine_run_signature, coarse_score, fine_score, score_decay)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (expr_hash, coarse_run_signature, fine_run_signature, coarse_score, fine_score, score_decay))
+
+    def get_coarse_to_fine_decay(self, coarse_run_signature: str, fine_run_signature: str) -> list:
+        """获取粗筛到细筛的衰减数据"""
+        res = self.con.execute("""
+            SELECT expr_hash, coarse_score, fine_score, score_decay
+            FROM expression_eval_lineage
+            WHERE coarse_run_signature = ? AND fine_run_signature = ?
+            ORDER BY score_decay DESC
+        """, (coarse_run_signature, fine_run_signature)).fetchall()
+        return res
 
     def close(self):
         self.con.close()

@@ -83,3 +83,21 @@ outputs/**
 # Keep only this file under outputs/real_all
 !outputs/real_all/
 !outputs/real_all/top100.csv
+
+# Do not upload HTML and PNG files
+*.html
+*.png
+
+# Ignore everything under outputs
+outputs/**
+
+# Keep outputs directory itself
+!outputs/
+
+# Keep outputs/expressions and all files inside it
+!outputs/expressions/
+!outputs/expressions/**
+
+# Keep only this file under outputs/real_all
+!outputs/real_all/
+!outputs/real_all/top100.csv

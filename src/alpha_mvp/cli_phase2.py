@@ -22,6 +22,9 @@ def main():
     p.add_argument("--test-start", default="20250901")
     p.add_argument("--progress-min-interval-sec", type=float, default=5.0)
     p.add_argument("--force-rerun", action="store_true", help="Force recalculation even if job exists")
+    p.add_argument("--checkpoint-pct", type=float, default=0.10)
+    p.add_argument("--first-checkpoint-pct", type=float, default=0.03)
+    p.add_argument("--topk-checkpoint", type=int, default=30)
     
     # Phase 2 Field Selection
     p.add_argument("--fields", default=None, help="Comma separated list of fields to include")
@@ -50,6 +53,9 @@ def main():
         test_start=args.test_start,
         progress_min_interval_sec=args.progress_min_interval_sec,
         force_rerun=args.force_rerun,
+        checkpoint_pct=args.checkpoint_pct,
+        first_checkpoint_pct=args.first_checkpoint_pct,
+        topk_checkpoint=args.topk_checkpoint,
         fields=fields,
         exclude_fields=exclude_fields,
         field_file=args.field_file,
