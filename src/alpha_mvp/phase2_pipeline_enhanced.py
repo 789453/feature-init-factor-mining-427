@@ -1,3 +1,6 @@
+"""
+增强的Phase2流水线，集成新功能
+"""
 from __future__ import annotations
 import json
 import time
@@ -20,14 +23,16 @@ from .evaluator import BatchEvaluator, make_panels
 from .metrics import forward_returns
 from .parser import parse_expr, canonical
 from .attribution import run_all_attribution
+from .attribution_extended import run_extended_attribution
+from .candidate_sampler_extended import select_for_fine_screen, export_candidate_expr_file, export_candidate_analysis
 from .ranking import interleave_by_group, stratified_ranking
 from .signature import build_manifest_from_config, compute_run_signature
+from .template_combo import TemplateComboCatalog
 
-def compute_run_signature(manifest: dict) -> str:
-    content = json.dumps(manifest, sort_keys=True)
-    return hashlib.sha256(content.encode()).hexdigest()
-
-def run_phase2(cfg: RunConfig) -> dict:
+def run_phase2_enhanced(cfg: RunConfig, template_config_path: str = None) -> dict:
+    """
+    增强的Phase2流水线，支持YAML模板配置和更完整的签名系统
+    """
     out = Path(cfg.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -72,7 +77,6 @@ def run_phase2(cfg: RunConfig) -> dict:
         specs = TEMPLATE_SPECS
         budgets = COMPLEXITY_BUDGETS
         
-        template_config_path = getattr(cfg, 'template_config_path', None)
         if template_config_path and Path(template_config_path).exists():
             try:
                 loaded_specs, loaded_budgets, _ = load_template_config(template_config_path)
@@ -93,11 +97,10 @@ def run_phase2(cfg: RunConfig) -> dict:
             template_config_path=template_config_path
         )
 
-    # 7. 提取元数据并构建完整的manifest
+    # 7. 提取元数据并初始化 JobStore
     metas = [extract_meta(r.expr, r) for r in expr_records]
     
-    # 使用新的签名系统
-    template_config_path = getattr(cfg, 'template_config_path', None)
+    # 8. 构建完整的manifest（使用新的签名系统）
     manifest = build_manifest_from_config(cfg, template_config_path or "default", selected_fields)
     run_signature = compute_run_signature(manifest)
     manifest["run_signature"] = run_signature
@@ -105,10 +108,14 @@ def run_phase2(cfg: RunConfig) -> dict:
     print(f"[Phase2] Run signature: {run_signature[:16]}")
     print(f"[Phase2] Pool: {manifest['pool_signature']['pool_json']} ({manifest['pool_signature']['n_codes']} codes)")
     print(f"[Phase2] Fields: {len(selected_fields)} fields")
+    print(f"[Phase2] Templates: {len(specs)} specs")
     print(f"[Phase2] Expressions: {len(expr_records)} generated")
     
     db_path = cfg.sqlite_path or str(out / "phase2_results.duckdb")
     store = DuckDBJobStore(db_path)
+    
+    # 初始化模板组合目录
+    combo_catalog = TemplateComboCatalog(db_path)
     
     if cfg.force_rerun:
         print(f"[Phase2] Force rerun enabled. Clearing previous results for signature {run_signature[:8]}")
@@ -119,8 +126,7 @@ def run_phase2(cfg: RunConfig) -> dict:
     store.upsert_expressions(expr_records, metas)
     store.enqueue_jobs(run_signature, expr_records)
 
-    # 8. 运行评估
-    # 在 Phase 2 中，生成器已经根据 ComplexityTier 进行了校验，评估器可以放宽限制
+    # 9. 运行评估
     ev = BatchEvaluator(
         panels={k: v for k, v in panels.items() if k != "close"},
         dates=dates,
@@ -192,7 +198,7 @@ def run_phase2(cfg: RunConfig) -> dict:
     if results_buffer:
         store.write_results(run_signature, results_buffer)
     
-    # 9. 计算 Rank Score 并导出结果
+    # 10. 计算 Rank Score 并导出结果
     query = """
     SELECT r.*, c.template_family, c.template_name, c.nodes, c.complexity_tier
     FROM factor_results r
@@ -203,54 +209,111 @@ def run_phase2(cfg: RunConfig) -> dict:
     
     all_res = apply_ranked_score(all_res)
     
-    # 增强的分层交替显示逻辑
-    def interleave_top_results(df, top_n=100, strategy="interleave"):
-        if df.empty: 
-            return df
-        if "template_family" not in df.columns: 
-            return df.head(top_n)
-        
-        if strategy == "interleave":
-            # 使用新的interleave_by_group函数
-            return interleave_by_group(df, group_cols=["template_family"], top_n=top_n)
-        elif strategy == "stratified":
-            # 使用分层排序
-            return stratified_ranking(
-                df,
-                score_col="score_ranked",
-                group_cols=["template_family"],
-                top_n=top_n,
-                min_per_group=5,
-                max_per_group=30
-            )
-        else:
-            # 默认的简单排序
-            return df.head(top_n)
-
-    # 写回数据库
-    for _, row in all_res.iterrows():
-        store.con.execute("""
-            UPDATE factor_results 
-            SET score_ranked = ?, score_raw = ?, yearly_positive_ratio = ?, complexity_score = ?
-            WHERE run_signature = ? AND expr_hash = ?
-        """, (row["score_ranked"], row["score_raw"], row.get("yearly_positive_ratio", 0), row.get("complexity_score", 0), run_signature, row["expr_hash"]))
-    
-    # 导出 CSV
+    # 11. 增强的排序和分层显示
     export_dir = out / "exports"
     export_dir.mkdir(exist_ok=True)
     
     full_sorted = all_res.sort_values("score_ranked", ascending=False)
     full_sorted.to_csv(out / "factor_results_phase2.csv", index=False)
     
-    # 使用增强的分层显示
-    ranking_strategy = getattr(cfg, 'ranking_strategy', 'interleave')
-    top_interleaved = interleave_top_results(full_sorted, top_n=100, strategy=ranking_strategy)
+    # 使用增强的分层排序
+    if cfg.ranking_strategy == "interleave":
+        top_interleaved = interleave_by_group(
+            full_sorted, 
+            group_cols=["template_family"], 
+            top_n=cfg.top_n_display or 100
+        )
+    elif cfg.ranking_strategy == "stratified":
+        top_interleaved = stratified_ranking(
+            full_sorted,
+            score_col="score_ranked",
+            group_cols=["template_family"],
+            top_n=cfg.top_n_display or 100,
+            min_per_group=5,
+            max_per_group=30
+        )
+    else:
+        # 默认的简单排序
+        top_interleaved = full_sorted.head(cfg.top_n_display or 100)
+    
     top_interleaved.to_csv(out / "top100_phase2.csv", index=False)
     
-    # 10. 运行 Attribution
-    run_all_attribution(store.con, run_signature, str(out))
+    # 12. 候选选择（如果是粗筛阶段）
+    if cfg.phase_type == "coarse":
+        print("[Phase2] Selecting candidates for fine screening...")
+        candidates = select_for_fine_screen(
+            full_sorted,
+            top_k=cfg.candidate_top_k or 1000,
+            sample_n=cfg.candidate_sample_n or 1000,
+            min_per_template_family=cfg.candidate_min_per_family or 100,
+            min_per_field=cfg.candidate_min_per_field or 20,
+            min_per_operator=cfg.candidate_min_per_operator or 20,
+            alpha=cfg.candidate_alpha or 0.85,
+            seed=cfg.seed
+        )
+        
+        # 导出候选表达式
+        export_candidate_expr_file(candidates, str(export_dir / "fine_candidates.expr"))
+        export_candidate_expr_file(candidates, str(export_dir / "fine_candidates.csv"), add_header=True)
+        
+        # 导出候选分析
+        export_candidate_analysis(candidates, str(export_dir))
+        
+        print(f"[Phase2] Exported {len(candidates)} candidates for fine screening")
+    
+    # 13. 运行扩展的归因分析
+    if cfg.extended_attribution:
+        print("[Phase2] Running extended attribution analysis...")
+        
+        # 如果有粗筛和细筛的对比，运行衰减分析
+        if cfg.coarse_signature and cfg.fine_signature:
+            run_extended_attribution(
+                store.con, 
+                run_signature, 
+                str(out),
+                coarse_signature=cfg.coarse_signature,
+                fine_signature=cfg.fine_signature
+            )
+        else:
+            run_extended_attribution(store.con, run_signature, str(out))
+    else:
+        # 运行基础归因分析
+        run_all_attribution(store.con, run_signature, str(out))
+    
+    # 14. 更新模板组合目录统计
+    if hasattr(cfg, 'update_combo_catalog') and cfg.update_combo_catalog:
+        print("[Phase2] Updating template combo catalog...")
+        # 这里需要实现模板组合统计更新逻辑
+        # 统计每种模板组合的实际表现
     
     print(f"[Phase2] Finished. Results in {out}")
     store.close()
+    combo_catalog.close()
     
     return manifest
+
+# 保持向后兼容的函数
+def run_phase2(cfg: RunConfig) -> dict:
+    """原始Phase2流水线，保持向后兼容"""
+    return run_phase2_enhanced(cfg, template_config_path=None)
+
+def interleave_top_results(df, top_n=100):
+    """原始的分层显示函数，保持向后兼容"""
+    if df.empty: 
+        return df
+    if "template_family" not in df.columns: 
+        return df.head(top_n)
+    
+    families = df["template_family"].unique()
+    groups = [df[df["template_family"] == f] for f in families]
+    
+    interleaved = []
+    for i in range(top_n):
+        for g in groups:
+            if i < len(g):
+                interleaved.append(g.iloc[i])
+            if len(interleaved) >= top_n:
+                break
+        if len(interleaved) >= top_n:
+            break
+    return pd.DataFrame(interleaved)

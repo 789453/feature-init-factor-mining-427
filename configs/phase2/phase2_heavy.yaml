@@ -1,0 +1,42 @@
+# 重量级配置，用于全面挖掘
+base_config:
+  duckdb_path: data/market.duckdb
+  forward_days: 5
+  train_end: "20250831"
+  test_start: "20250901"
+  windows: [5, 10, 15, 20, 30, 40, 50, 60]
+  batch_size: 256
+  write_every: 200
+  progress_min_interval_sec: 60
+  seed: 42
+  extended_attribution: true
+  ranking_strategy: stratified  # 使用分层排序确保更好的多样性
+
+template_config_path: configs/phase2/templates_v1.yaml
+
+candidate_selection:
+  top_k: 2000
+  sample_n: 2000
+  min_per_family: 200
+  min_per_field: 50
+  min_per_operator: 50
+  alpha: 0.9
+
+phase_config:
+  coarse:
+    pool_json: static_pool_200.json
+    start: "20200101"  # 更长的历史数据
+    end: "20260430"
+    max_exprs: 200000  # 更多表达式
+    out_dir: outputs/phase2_heavy/coarse_200_2020
+    phase_type: coarse
+    top_n_display: 200
+    
+  fine:
+    pool_json: static_pool_800.json
+    start: "20150101"  # 更长的历史数据
+    end: "20260430"
+    max_exprs: 50000
+    out_dir: outputs/phase2_heavy/fine_800_2015
+    phase_type: fine
+    top_n_display: 200

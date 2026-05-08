@@ -18,6 +18,11 @@ class TemplateSpec:
     short_windows: Sequence[int] = ()
     long_windows: Sequence[int] = ()
     complexity_tier: int = 1
+    # 新增字段，用于binary_mixed模板
+    left_ts_ops: Sequence[str] = ()
+    right_ts_ops: Sequence[str] = ()
+    # 新增字段，用于triple和quad模板
+    forms: Sequence[str] = ()
 
 @dataclass(frozen=True)
 class ComplexityBudget:
@@ -65,6 +70,8 @@ TEMPLATE_SPECS = [
         binary_ops=("Sub", "Div", "Mul"),
         outer_transforms=("Rank",),
         complexity_tier=2,
+        left_ts_ops=("TsMean", "TsEMA", "TsDelta", "TsIr"),
+        right_ts_ops=("TsMean", "TsStd", "TsRank", "TsWMA"),
     ),
     TemplateSpec(
         name="triple_modulation",
@@ -74,6 +81,7 @@ TEMPLATE_SPECS = [
         binary_ops=("Add", "Sub", "Mul", "Div"),
         outer_transforms=("Rank",),
         complexity_tier=3,
+        forms=("Rank(Mul(Sub(A,B),C))", "Rank(Div(Sub(A,B),Abs(C)))", "Rank(Sub(Mul(A,B),C))", "Rank(Add(Mul(A,B),C))", "Rank(Mul(Div(A,B),C))"),
     ),
     TemplateSpec(
         name="quad_balanced",
@@ -83,6 +91,7 @@ TEMPLATE_SPECS = [
         binary_ops=("Sub", "Mul", "Div"),
         outer_transforms=("Rank",),
         complexity_tier=4,
+        forms=("Rank(Sub(Mul(A,B),Mul(C,D)))", "Rank(Sub(Div(A,B),Div(C,D)))", "Rank(Mul(Sub(A,B),Sub(C,D)))"),
     ),
     TemplateSpec(
         name="multi_window_gap",

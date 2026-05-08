@@ -1,0 +1,36 @@
+# 股票池配置
+pools:
+  coarse:
+    file: static_pool_200.json
+    description: "200只股票池，用于粗筛阶段快速筛选"
+    n_codes: 200
+    date_range: "2024-2026"
+    
+  fine:
+    file: static_pool_800.json
+    description: "800只股票池，用于细筛阶段详细验证"
+    n_codes: 800
+    date_range: "2018-2026"
+    
+  full:
+    file: static_pool_800.json
+    description: "全量股票池，用于最终验证"
+    n_codes: 800
+    date_range: "2015-2026"
+
+# 股票池选择策略
+pool_strategy:
+  # 粗筛阶段：使用小池子快速覆盖
+  coarse_selection: coarse
+  
+  # 细筛阶段：使用大池子验证
+  fine_selection: fine
+  
+  # 最终验证：使用全池子
+  final_validation: full
+
+# 股票池质量要求
+pool_quality_requirements:
+  min_listing_days: 252  # 至少上市一年
+  min_trading_days_ratio: 0.8  # 80%的交易日有交易
+  max_st_days_ratio: 0.05  # 最多5%的交易日是ST状态

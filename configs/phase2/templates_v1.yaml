@@ -1,0 +1,74 @@
+version: templates_v1
+windows: [10, 20, 30, 40, 50]
+short_windows: [5, 10, 20]
+long_windows: [40, 60, 80]
+
+budgets:
+  1: {max_depth: 4, max_nodes: 10, max_ts_ops: 2, max_pair_ops: 1, max_binary_ops: 1, max_unary_ops: 3}
+  2: {max_depth: 5, max_nodes: 14, max_ts_ops: 3, max_pair_ops: 1, max_binary_ops: 2, max_unary_ops: 4}
+  3: {max_depth: 6, max_nodes: 18, max_ts_ops: 4, max_pair_ops: 1, max_binary_ops: 3, max_unary_ops: 5}
+  4: {max_depth: 7, max_nodes: 24, max_ts_ops: 4, max_pair_ops: 1, max_binary_ops: 4, max_unary_ops: 6}
+
+families:
+  - name: single_ts_outer_rank
+    family: single
+    order: 1
+    enabled: true
+    unary_pre: [Id, Abs, SLog1p]
+    ts_ops: [TsMean, TsStd, TsIr, TsRank, TsDelta, TsDiv, TsPctChange, TsWMA, TsEMA]
+    outer_transforms: [Rank, SLog1p, RankSLog1p]
+    complexity_tier: 1
+
+  - name: binary_same_ts
+    family: binary_same_ts
+    order: 2
+    enabled: true
+    ts_ops: [TsMean, TsDelta, TsStd, TsEMA, TsWMA]
+    binary_ops: [Add, Sub, Mul, Div, Greater, Less]
+    outer_transforms: [Rank, SLog1p, RankSLog1p]
+    complexity_tier: 2
+
+  - name: binary_mixed_ts
+    family: binary_mixed_ts
+    order: 2
+    enabled: true
+    left_ts_ops: [TsMean, TsEMA, TsDelta, TsIr]
+    right_ts_ops: [TsMean, TsStd, TsRank, TsWMA]
+    binary_ops: [Sub, Div, Mul]
+    outer_transforms: [Rank]
+    complexity_tier: 2
+
+  - name: triple_modulation
+    family: triple
+    order: 3
+    enabled: true
+    ts_ops: [TsMean, TsDelta, TsEMA]
+    forms:
+      - Rank(Mul(Sub(A,B),C))
+      - Rank(Div(Sub(A,B),Abs(C)))
+      - Rank(Sub(Mul(A,B),C))
+      - Rank(Add(Mul(A,B),C))
+      - Rank(Mul(Div(A,B),C))
+    max_count: 30000
+    complexity_tier: 3
+
+  - name: quad_balanced
+    family: quad
+    order: 4
+    enabled: false
+    ts_ops: [TsMean, TsEMA]
+    forms:
+      - Rank(Sub(Mul(A,B),Mul(C,D)))
+      - Rank(Sub(Div(A,B),Div(C,D)))
+      - Rank(Mul(Sub(A,B),Sub(C,D)))
+    max_count: 10000
+    complexity_tier: 4
+
+  - name: multi_window_gap
+    family: multi_window
+    order: 1
+    enabled: true
+    ts_ops: [TsMean, TsEMA, TsStd, TsRank]
+    binary_ops: [Sub, Div]
+    outer_transforms: [Rank]
+    complexity_tier: 2
