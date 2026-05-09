@@ -11,7 +11,7 @@ def panel_to_alphalens_series(arr, dates, codes):
         index=pd.to_datetime(dates, format="%Y%m%d"),
         columns=codes,
     )
-    s = df.stack(dropna=False)
+    s = df.stack()
     s.index.names = ["date", "asset"]
     return s.sort_index()
 

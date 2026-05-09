@@ -96,24 +96,32 @@ def run_validation(cfg):
             raise RuntimeError(f"Cannot skip to step 4+: factor cache not found at {factor_cache_dir}")
 
     analytics_results = {"Summary": pd.DataFrame(), "rolling_ic": pd.DataFrame()}
+    summary_path = Path(str(out)) / "metrics" / "summary.csv"
+    rolling_path = Path(str(out)) / "metrics" / "rolling_ic.parquet"
+
     if cfg.from_step <= 4:
-        print(f"[4/8] Running batch analytics (IC/RankIC)")
-        if len(factor_panels) > 0:
+        if summary_path.exists() and not cfg.overwrite_cache:
+            print(f"[4/8] Loading analytics from cache")
+            analytics_results["Summary"] = pd.read_csv(summary_path)
+            if rolling_path.exists():
+                analytics_results["rolling_ic"] = pd.read_parquet(rolling_path)
+            print(f"  Loaded {len(analytics_results['Summary'])} factors from cache")
+        elif len(factor_panels) > 0:
+            print(f"[4/8] Running batch analytics (IC/RankIC)")
             analytics_results = run_batch_analytics(
                 factor_panels, panels["close"], dates, codes, str(out), cfg
             )
-            print(f"  Analytics complete: {len(analytics_results.get('Summary', []))} factors")
+            print(f"  Analytics complete: {len(analytics_results.get('Summary', pd.DataFrame()))} factors")
         else:
-            print(f"  Skipping: no factor panels loaded")
+            print(f"[4/8] Skipping: no factor panels loaded")
     else:
-        summary_path = Path(str(out)) / "metrics" / "summary.csv"
-        rolling_path = Path(str(out)) / "metrics" / "rolling_ic.parquet"
-        if summary_path.exists() and rolling_path.exists():
+        if summary_path.exists():
             print(f"[4/8] Loading analytics from cache (--from-step={cfg.from_step})")
             analytics_results["Summary"] = pd.read_csv(summary_path)
-            analytics_results["rolling_ic"] = pd.read_parquet(rolling_path)
+            if rolling_path.exists():
+                analytics_results["rolling_ic"] = pd.read_parquet(rolling_path)
         else:
-            print(f"[4/8] Skipping (--from-step={cfg.from_step})")
+            print(f"[4/8] Cannot load - files not found at {summary_path}")
 
     group_results = {"Size": pd.DataFrame(), "Industry": pd.DataFrame()}
     if cfg.from_step <= 5:

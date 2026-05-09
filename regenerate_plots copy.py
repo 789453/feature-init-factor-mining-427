@@ -1,3 +1,6 @@
+"""
+重绘验证结果图表脚本 - 不重新计算，只读取缓存数据并生成可视化
+"""
 from __future__ import annotations
 import numpy as np
 import pandas as pd
@@ -5,40 +8,51 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
+import json
 
-def plot_equity_curve(equity_df: pd.DataFrame, out_dir: Path) -> None:
-    if equity_df.empty:
-        return
-    plot_dir = out_dir / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
 
-    for fid in equity_df["factor_id"].unique():
-        df = equity_df[equity_df["factor_id"] == fid]
-        for tq in df["top_pct"].unique():
-            dff = df[df["top_pct"] == tq]
-            fig = px.line(dff, x="date", y="equity", title=f"{fid} Top{tq*100:.0f}% Equity Curve")
-            fig.write_html(plot_dir / f"{fid}_top{tq}_equity.html")
+OUT_DIR = Path("d:/Trading/My_factor_mining_427/outputs/validation_full")
+PLOT_DIR = OUT_DIR / "plots"
 
-def plot_rolling_ic(rolling_ic_df: pd.DataFrame, out_dir: Path) -> None:
-    if rolling_ic_df.empty:
-        return
-    plot_dir = out_dir / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
 
-    for fid in rolling_ic_df["factor_id"].unique():
-        df = rolling_ic_df[rolling_ic_df["factor_id"] == fid].sort_values("date")
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df["date"], y=df["rank_ic"], name="Daily RankIC", opacity=0.5))
-        fig.add_trace(go.Scatter(x=df["date"], y=df["rolling_20"], name="Rolling 20"))
-        fig.add_trace(go.Scatter(x=df["date"], y=df["rolling_60"], name="Rolling 60"))
-        fig.update_layout(title=f"{fid} Rolling RankIC")
-        fig.write_html(plot_dir / f"{fid}_rolling_ic.html")
+def load_metrics():
+    summary = pd.read_csv(OUT_DIR / "metrics" / "summary.csv")
+    rolling_ic = pd.read_parquet(OUT_DIR / "metrics" / "rolling_ic.parquet")
+    group_size = pd.read_csv(OUT_DIR / "metrics" / "group_size.csv")
+    group_ind = pd.read_csv(OUT_DIR / "metrics" / "group_industry.csv")
+    return summary, rolling_ic, group_size, group_ind
 
-def plot_rolling_ic_all(rolling_ic: pd.DataFrame, out_dir: Path) -> None:
+
+def load_vectorbot():
+    vb_dir = OUT_DIR / "vectorbot"
+    if not vb_dir.exists():
+        return pd.DataFrame(), pd.DataFrame()
+    summary = pd.read_csv(vb_dir / "portfolio_summary.csv")
+    equity = pd.read_parquet(vb_dir / "equity_curves.parquet")
+    return summary, equity
+
+
+def load_factor_cache():
+    cache_dir = OUT_DIR / "cache" / "factor_panels"
+    manifest_path = cache_dir / "manifest.json"
+    if not manifest_path.exists():
+        return {}
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+    factors = {}
+    for item in manifest.get("factors", []):
+        fid = item["factor_id"]
+        p = cache_dir / f"{fid}.parquet"
+        if p.exists():
+            df = pd.read_parquet(p)
+            factors[fid] = df
+    return factors
+
+
+def plot_rolling_ic_all(rolling_ic: pd.DataFrame, out_dir: Path):
     if rolling_ic.empty:
         return
-    plot_dir = out_dir / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     for fid in rolling_ic["factor_id"].unique():
         df = rolling_ic[rolling_ic["factor_id"] == fid].sort_values("date")
@@ -68,13 +82,13 @@ def plot_rolling_ic_all(rolling_ic: pd.DataFrame, out_dir: Path) -> None:
 
         fig.update_layout(height=500, showlegend=True,
                          title=dict(text=fid, x=0.5))
-        fig.write_html(plot_dir / f"{fid}_rolling_ic.html")
+        fig.write_html(out_dir / f"{fid}_rolling_ic.html")
 
-def plot_equity_all(equity: pd.DataFrame, out_dir: Path) -> None:
+
+def plot_equity_all(equity: pd.DataFrame, out_dir: Path):
     if equity.empty:
         return
-    plot_dir = out_dir / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     for fid in equity["factor_id"].unique():
         df = equity[equity["factor_id"] == fid].sort_values("date")
@@ -98,32 +112,29 @@ def plot_equity_all(equity: pd.DataFrame, out_dir: Path) -> None:
             yaxis_title="Equity (1=initial)",
             showlegend=True
         )
-        fig.write_html(plot_dir / f"{fid}_equity.html")
+        fig.write_html(out_dir / f"{fid}_equity.html")
 
-def plot_top10_equity_comparison(factor_metrics: pd.DataFrame, equity_df: pd.DataFrame, out_dir: Path) -> None:
-    if equity_df.empty or factor_metrics.empty:
+
+def plot_equity_comparison(equity: pd.DataFrame, summary: pd.DataFrame, out_dir: Path):
+    if equity.empty or summary.empty:
         return
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    score_col = "test_sharpe" if "test_sharpe" in factor_metrics.columns else "test_mean_rank_ic"
-    top_fids = factor_metrics.nlargest(10, score_col)["factor_id"].tolist()
+    top_fids = summary.nlargest(10, "test_sharpe")["factor_id"].tolist()
 
     fig = go.Figure()
     colors = px.colors.qualitative.Plotly
-
     for i, fid in enumerate(top_fids):
-        df = equity_df[(equity_df["factor_id"] == fid) & (equity_df["top_pct"] == 0.1)].sort_values("date")
+        df = equity[(equity["factor_id"] == fid) & (equity["top_pct"] == 0.1)].sort_values("date")
         if not df.empty:
             fig.add_trace(go.Scatter(
                 x=df["date"], y=df["equity"],
-                name=fid.split("_")[0],
-                mode="lines",
+                name=fid.split("_")[0], mode="lines",
                 line=dict(color=colors[i % len(colors)])
             ))
 
     fig.update_layout(
-        height=600,
-        width=1200,
+        height=500,
         title=dict(text="Top 10 Factors - Equity Curve Comparison (Top 10%)", x=0.5),
         xaxis_title="Date",
         yaxis_title="Equity",
@@ -132,7 +143,8 @@ def plot_top10_equity_comparison(factor_metrics: pd.DataFrame, equity_df: pd.Dat
     )
     fig.write_html(out_dir / "top10_equity_comparison.html")
 
-def plot_size_bucket(size_df: pd.DataFrame, out_dir: Path) -> None:
+
+def plot_size_bucket(size_df: pd.DataFrame, out_dir: Path):
     if size_df.empty:
         return
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -143,19 +155,21 @@ def plot_size_bucket(size_df: pd.DataFrame, out_dir: Path) -> None:
     fig.update_layout(height=350)
     fig.write_html(out_dir / "size_bucket.html")
 
-def plot_industry(industry_df: pd.DataFrame, out_dir: Path) -> None:
+
+def plot_industry_top(industry_df: pd.DataFrame, out_dir: Path):
     if industry_df.empty:
         return
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    top_industries = industry_df.nlargest(20, "mean_rank_ic")
-    fig = px.bar(top_industries, x="industry", y="mean_rank_ic",
+    top = industry_df.nlargest(20, "mean_rank_ic")
+    fig = px.bar(top, x="industry", y="mean_rank_ic",
                  color="mean_rank_ic", color_continuous_scale="RdYlGn",
                  title="Top 20 Industries by Mean RankIC")
     fig.update_layout(height=400, xaxis_tickangle=-45)
     fig.write_html(out_dir / "industry_top20.html")
 
-def plot_ic_heatmap(rolling_ic: pd.DataFrame, out_dir: Path) -> None:
+
+def plot_ic_heatmap(rolling_ic: pd.DataFrame, out_dir: Path):
     if rolling_ic.empty:
         return
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -176,7 +190,8 @@ def plot_ic_heatmap(rolling_ic: pd.DataFrame, out_dir: Path) -> None:
     fig.update_layout(height=600, title="Top 20 Factors - IC Heatmap (Date x Factor)")
     fig.write_html(out_dir / "ic_heatmap_top20.html")
 
-def plot_vectorbot_summary(summary: pd.DataFrame, out_dir: Path) -> None:
+
+def plot_vectorbot_summary(summary: pd.DataFrame, out_dir: Path):
     if summary.empty:
         return
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -210,7 +225,8 @@ def plot_vectorbot_summary(summary: pd.DataFrame, out_dir: Path) -> None:
                      title=dict(text="VectorBot Portfolio Summary (Top 10%)", x=0.5))
     fig.write_html(out_dir / "vectorbot_summary.html")
 
-def plot_factor_ic_distribution(rolling_ic: pd.DataFrame, out_dir: Path) -> None:
+
+def plot_factor_ic_distribution(rolling_ic: pd.DataFrame, out_dir: Path):
     if rolling_ic.empty:
         return
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -234,15 +250,11 @@ def plot_factor_ic_distribution(rolling_ic: pd.DataFrame, out_dir: Path) -> None
                      title=dict(text="Factor IC Statistics Distribution", x=0.5))
     fig.write_html(out_dir / "ic_distribution.html")
 
-def plot_alphalens_from_cache(out_dir: Path) -> None:
+
+def plot_alphalens_from_cache(out_dir: Path):
     al_dir = out_dir / "alphalens"
     if not al_dir.exists():
-        al_dir = out_dir.parent / "alphalens"
-    if not al_dir.exists():
         return
-
-    plot_dir = out_dir / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
 
     for fid_dir in sorted(al_dir.iterdir()):
         if not fid_dir.is_dir():
@@ -257,12 +269,13 @@ def plot_alphalens_from_cache(out_dir: Path) -> None:
             if clean.empty:
                 continue
 
-            plot_alphalens_factor(clean, fid, plot_dir)
-            plot_alphalens_quantile_returns(clean, fid, plot_dir)
+            plot_alphalens_factor(clean, fid, out_dir / "plots")
+            plot_alphalens_quantile_returns(clean, fid, out_dir / "plots")
         except Exception as e:
             print(f"Failed to process {fid}: {e}")
 
-def plot_alphalens_factor(clean: pd.DataFrame, fid: str, out_dir: Path) -> None:
+
+def plot_alphalens_factor(clean: pd.DataFrame, fid: str, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     dates = clean.index.get_level_values("date").unique()
@@ -288,7 +301,8 @@ def plot_alphalens_factor(clean: pd.DataFrame, fid: str, out_dir: Path) -> None:
                      title=dict(text=f"{fid} - Alphalens Analysis", x=0.5))
     fig.write_html(out_dir / f"{fid}_alphalens.html")
 
-def plot_alphalens_quantile_returns(clean: pd.DataFrame, fid: str, out_dir: Path) -> None:
+
+def plot_alphalens_quantile_returns(clean: pd.DataFrame, fid: str, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     qt_returns = clean.groupby(["date", "factor_quantile"])["1D"].mean().reset_index()
@@ -316,20 +330,47 @@ def plot_alphalens_quantile_returns(clean: pd.DataFrame, fid: str, out_dir: Path
     )
     fig.write_html(out_dir / f"{fid}_quantile_returns.html")
 
-def generate_factor_plots(factor_metrics: pd.DataFrame, rolling_ic: pd.DataFrame,
-                         equity: pd.DataFrame, size_df: pd.DataFrame,
-                         industry_df: pd.DataFrame, out_dir: str) -> None:
-    out_path = Path(out_dir)
-    plot_dir = out_path / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    out_path.mkdir(parents=True, exist_ok=True)
 
-    plot_rolling_ic_all(rolling_ic, out_path)
-    plot_equity_all(equity, out_path)
-    plot_alphalens_from_cache(out_path)
+def main():
+    print("Loading cached data...")
+    summary, rolling_ic, group_size, group_ind = load_metrics()
+    vb_summary, equity = load_vectorbot()
 
-    plot_top10_equity_comparison(factor_metrics, equity, out_path)
-    plot_size_bucket(size_df, out_path)
-    plot_industry(industry_df, out_path)
-    plot_ic_heatmap(rolling_ic, out_path)
-    plot_factor_ic_distribution(rolling_ic, out_path)
+    print(f"  Loaded {len(summary)} factors, {len(rolling_ic)} IC records")
+    print(f"  VectorBot: {len(vb_summary)} portfolios, {len(equity)} equity records")
+
+    print("Generating plots...")
+
+    print("  - Rolling IC plots...")
+    plot_rolling_ic_all(rolling_ic, PLOT_DIR)
+
+    print("  - Equity curves...")
+    plot_equity_all(equity, PLOT_DIR)
+
+    print("  - Equity comparison...")
+    plot_equity_comparison(equity, vb_summary, PLOT_DIR)
+
+    print("  - Size bucket plot...")
+    plot_size_bucket(group_size, PLOT_DIR)
+
+    print("  - Industry plot...")
+    plot_industry_top(group_ind, PLOT_DIR)
+
+    print("  - IC heatmap...")
+    plot_ic_heatmap(rolling_ic, PLOT_DIR)
+
+    print("  - VectorBot summary...")
+    plot_vectorbot_summary(vb_summary, PLOT_DIR)
+
+    print("  - IC distribution...")
+    plot_factor_ic_distribution(rolling_ic, PLOT_DIR)
+
+    print("  - Alphalens from cache...")
+    plot_alphalens_from_cache(OUT_DIR)
+
+    print(f"\nAll plots saved to {PLOT_DIR}")
+    print(f"Total HTML files: {len(list(PLOT_DIR.glob('*.html')))}")
+
+
+if __name__ == "__main__":
+    main()
