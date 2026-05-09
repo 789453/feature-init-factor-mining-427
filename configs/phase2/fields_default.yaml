@@ -1,0 +1,47 @@
+# 字段默认配置
+fields:
+  # 价格相关字段
+  - ret_1d
+  - ret_5d
+  - ret_20d
+  - hl_range
+  - oc_ret
+  - co_ret
+  
+  # 成交量相关字段
+  - vol_log
+  - vol_std_20
+  - vol_ratio
+  
+  # 技术指标
+  - rsi_14
+  - macd_diff
+  - boll_position
+  
+  # 基本面字段
+  - pe_ratio
+  - pb_ratio
+  - market_cap
+  
+exclude_fields: []  # 要排除的字段
+
+# 字段公式版本
+field_formula_version: "2024-01-01-v1"
+
+# 字段描述
+field_descriptions:
+  ret_1d: "1日收益率"
+  ret_5d: "5日收益率"
+  ret_20d: "20日收益率"
+  hl_range: "高低价区间"
+  oc_ret: "开盘收盘收益"
+  co_ret: "收盘开盘收益"
+  vol_log: "成交量对数"
+  vol_std_20: "20日成交量标准差"
+  vol_ratio: "成交量比率"
+  rsi_14: "14日RSI"
+  macd_diff: "MACD差值"
+  boll_position: "布林带位置"
+  pe_ratio: "市盈率"
+  pb_ratio: "市净率"
+  market_cap: "市值"

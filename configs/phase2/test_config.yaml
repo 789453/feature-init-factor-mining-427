@@ -1,0 +1,43 @@
+# 测试配置，使用模拟数据
+base_config:
+  duckdb_path: null  # 使用模拟数据
+  use_simulated: true
+  forward_days: 5
+  train_end: "20250831"
+  test_start: "20250901"
+  windows: [10, 20, 30]
+  batch_size: 64
+  write_every: 50
+  progress_min_interval_sec: 30
+  seed: 42
+  extended_attribution: true
+  ranking_strategy: interleave
+
+template_config_path: configs/phase2/templates_light.yaml
+
+candidate_selection:
+  top_k: 100
+  sample_n: 100
+  min_per_family: 20
+  min_per_field: 5
+  min_per_operator: 5
+  alpha: 0.85
+
+phase_config:
+  coarse:
+    pool_json: static_pool_200.json
+    start: "20240101"
+    end: "20240131"  # 只使用1个月数据进行快速测试
+    max_exprs: 1000
+    out_dir: outputs/test_phase2/coarse_200_2024
+    phase_type: coarse
+    top_n_display: 20
+    
+  fine:
+    pool_json: static_pool_800.json
+    start: "20240101"
+    end: "20240131"
+    max_exprs: 500
+    out_dir: outputs/test_phase2/fine_800_2024
+    phase_type: fine
+    top_n_display: 20

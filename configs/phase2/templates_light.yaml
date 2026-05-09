@@ -1,0 +1,48 @@
+version: templates_light
+windows: [10, 20, 30]
+short_windows: [5, 10]
+long_windows: [20, 30]
+
+budgets:
+  1: {max_depth: 3, max_nodes: 8, max_ts_ops: 1, max_pair_ops: 0, max_binary_ops: 1, max_unary_ops: 2}
+  2: {max_depth: 4, max_nodes: 12, max_ts_ops: 2, max_pair_ops: 1, max_binary_ops: 2, max_unary_ops: 3}
+
+families:
+  - name: single_ts_outer_rank
+    family: single
+    order: 1
+    enabled: true
+    unary_pre: [Id, Abs]
+    ts_ops: [TsMean, TsStd, TsRank, TsDelta]
+    outer_transforms: [Rank]
+    complexity_tier: 1
+
+  - name: binary_same_ts
+    family: binary_same_ts
+    order: 2
+    enabled: true
+    ts_ops: [TsMean, TsDelta, TsStd]
+    binary_ops: [Sub, Div, Mul]
+    outer_transforms: [Rank]
+    complexity_tier: 2
+
+  - name: binary_mixed_ts
+    family: binary_mixed_ts
+    order: 2
+    enabled: true
+    left_ts_ops: [TsMean, TsDelta]
+    right_ts_ops: [TsMean, TsStd]
+    binary_ops: [Sub, Div]
+    outer_transforms: [Rank]
+    complexity_tier: 2
+
+  - name: triple_modulation
+    family: triple
+    order: 3
+    enabled: true
+    ts_ops: [TsMean, TsDelta]
+    forms:
+      - Rank(Mul(Sub(A,B),C))
+      - Rank(Sub(Mul(A,B),C))
+    max_count: 10000
+    complexity_tier: 2

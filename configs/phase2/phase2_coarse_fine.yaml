@@ -1,0 +1,46 @@
+# 粗筛/细筛流程配置文件
+base_config:
+  duckdb_path: data/market.duckdb
+  forward_days: 5
+  train_end: "20250831"
+  test_start: "20250901"
+  windows: [10, 20, 30, 40, 50]
+  batch_size: 128
+  write_every: 100
+  progress_min_interval_sec: 30
+  seed: 42
+  extended_attribution: true
+  ranking_strategy: interleave  # 可选: simple, interleave, stratified, diversity
+
+template_config_path: configs/phase2/templates_v1.yaml
+
+# 候选选择配置
+candidate_selection:
+  top_k: 1000
+  sample_n: 1000
+  min_per_family: 100
+  min_per_field: 20
+  min_per_operator: 20
+  alpha: 0.85
+
+# 阶段配置
+phase_config:
+  # 粗筛阶段：使用200股票池，2024年数据，快速覆盖大模板空间
+  coarse:
+    pool_json: static_pool_200.json
+    start: "20240101"
+    end: "20260430"
+    max_exprs: 80000
+    out_dir: outputs/phase2/coarse_200_2024
+    phase_type: coarse
+    top_n_display: 100
+    
+  # 细筛阶段：使用800股票池，2018-2024年数据，验证粗筛候选
+  fine:
+    pool_json: static_pool_800.json
+    start: "20180101"
+    end: "20260430"
+    max_exprs: 20000  # 通常比粗筛少，因为是验证候选
+    out_dir: outputs/phase2/fine_800_2018
+    phase_type: fine
+    top_n_display: 100

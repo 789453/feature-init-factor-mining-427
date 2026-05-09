@@ -27,7 +27,18 @@ def main():
     p.add_argument("--expr-file", default=None, help="Path to expression file (with index)")
     p.add_argument("--start-expr", type=int, default=1, help="Start expression index (1-based)")
     p.add_argument("--end-expr", type=int, default=None, help="End expression index (inclusive)")
+    
+    # Phase 2 Field Selection
+    p.add_argument("--fields", default=None, help="Comma separated list of fields to include")
+    p.add_argument("--exclude-fields", default=None, help="Comma separated list of fields to exclude")
+    p.add_argument("--field-file", default=None, help="Path to JSON file containing fields")
+    p.add_argument("--field-set", default=None, help="Name of a predefined field set")
+
     args = p.parse_args()
+    
+    fields = args.fields.split(",") if args.fields else None
+    exclude_fields = args.exclude_fields.split(",") if args.exclude_fields else None
+
     cfg = RunConfig(
         start=args.start, end=args.end, out_dir=args.out,
         max_exprs=args.max_exprs, batch_size=args.batch_size, seed=args.seed,
@@ -45,6 +56,10 @@ def main():
         expr_file=args.expr_file,
         start_expr=args.start_expr,
         end_expr=args.end_expr,
+        fields=fields,
+        exclude_fields=exclude_fields,
+        field_file=args.field_file,
+        field_set=args.field_set,
     )
     summary = run_pipeline(cfg)
     print(summary)

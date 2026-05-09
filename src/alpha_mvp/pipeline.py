@@ -81,6 +81,10 @@ def run_pipeline(cfg: RunConfig) -> dict:
 
     print(f"[start] total={total}, resuming={len(done)}, to_run={len(exprs_to_run)}")
 
+    # 定义 checkpoint 点: 3%, 10%, 20%, 30%, ..., 90%
+    checkpoint_points = {0.03, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90}
+    checkpoint_ratios_done = set()
+
     for idx, expr in enumerate(exprs_to_run, start=len(done) + 1):
         try:
             key = canonical(parse_expr(expr))
@@ -107,16 +111,14 @@ def run_pipeline(cfg: RunConfig) -> dict:
         ratio = idx / total
         now = time.time()
 
-        if ratio >= next_checkpoint_ratio and next_checkpoint_ratio not in checkpoint_ratios_done:
-            store.upsert_many(run_id, buffer)
-            buffer.clear()
-            all_df = store.load_all(run_id)
-            _write_checkpoint(out, all_df, next_checkpoint_ratio, cfg.topk_checkpoint)
-            checkpoint_ratios_done.add(next_checkpoint_ratio)
-            next_checkpoint_ratio = max(
-                cfg.checkpoint_pct,
-                (int(ratio / cfg.checkpoint_pct) + 1) * cfg.checkpoint_pct,
-            )
+        # 检查是否到达checkpoint点 (3%, 10%, 20%, ...)
+        for cp_pct in sorted(checkpoint_points):
+            if ratio >= cp_pct and cp_pct not in checkpoint_ratios_done:
+                checkpoint_ratios_done.add(cp_pct)
+                all_df = store.load_all(run_id)
+                _write_checkpoint(out, all_df, cp_pct, cfg.topk_checkpoint)
+                print(f"[Checkpoint] Reached {cp_pct:.0%} ({idx}/{total}), saved top{cfg.topk_checkpoint}")
+                break  # 一次只处理一个checkpoint
 
         if now - last_progress >= cfg.progress_min_interval_sec:
             print(f"[progress] {idx}/{total} ({ratio:.1%}), cache={len(ev._cache)}")
